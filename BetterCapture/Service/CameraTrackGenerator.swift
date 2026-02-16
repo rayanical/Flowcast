@@ -13,6 +13,10 @@ struct CameraTrackGenerator {
         let point: CGPoint
     }
 
+    private struct ClickChapter {
+        var events: [TimedPoint]
+    }
+
     func generate(from eventLog: InteractionEventLog, duration: Double, configuration: StudioRenderConfiguration) -> CameraTrack {
         let width = Double(eventLog.captureWidth)
         let height = Double(eventLog.captureHeight)
@@ -46,8 +50,7 @@ struct CameraTrackGenerator {
             var time = 0.0
             while time <= safeDuration {
                 if let point = point(at: time, in: smoothedCursor) {
-                    let biased = biasedCenter(from: point, width: width, height: height)
-                    let clamped = clampedCenter(for: biased, scale: 1, width: width, height: height)
+                    let clamped = clampedCenter(for: point, scale: 1, width: width, height: height)
                     keyframes.append(CameraKeyframe(t: time, scale: 1, cx: clamped.x, cy: clamped.y))
                 }
                 time += followInterval
@@ -56,33 +59,65 @@ struct CameraTrackGenerator {
 
         let clickEvents = eventLog.events
             .filter { $0.type == .click }
+            .compactMap { event -> TimedPoint? in
+                let resolved = clickCapturePoint(event) ?? point(at: event.t, in: smoothedCursor) ?? defaultCenter
+                return TimedPoint(t: event.t, point: resolved)
+            }
             .sorted { $0.t < $1.t }
 
-        for click in clickEvents {
-            let rawPoint = clickCapturePoint(click) ?? point(at: click.t, in: smoothedCursor) ?? defaultCenter
-            let center = clampedCenter(
-                for: biasedCenter(from: rawPoint, width: width, height: height),
-                scale: min(max(configuration.maxScale, 1), 2.5),
-                width: width,
-                height: height
+        let clickChapters = clusteredClickChapters(
+            from: clickEvents,
+            timeThreshold: 2.0,
+            distanceThreshold: 200
+        )
+
+        let cursorScaleBoost = configuration.cursorScaleEnabled ? 0.15 : 0
+        let targetScale = min(max(configuration.maxScale, 1), 1 + configuration.clickEmphasis * 1.4 + cursorScaleBoost)
+        let anticipationLead = max(0.45, 0.8 - configuration.clickEmphasis * 0.2)
+        let moveLead = max(0.25, anticipationLead * 0.6)
+        let idleBeforeZoomOut = 1.5
+        let zoomOutDuration = 0.35
+
+        for chapter in clickChapters {
+            guard let first = chapter.events.first, let last = chapter.events.last else {
+                continue
+            }
+
+            var currentCenter = clampedCenter(for: first.point, scale: targetScale, width: width, height: height)
+            let chapterZoomStart = max(0, first.t - anticipationLead)
+
+            keyframes.append(
+                CameraKeyframe(t: chapterZoomStart, scale: 1, cx: currentCenter.x, cy: currentCenter.y)
+            )
+            keyframes.append(
+                CameraKeyframe(t: first.t, scale: targetScale, cx: currentCenter.x, cy: currentCenter.y)
             )
 
-            let cursorScaleBoost = configuration.cursorScaleEnabled ? 0.15 : 0
-            let targetScale = min(max(configuration.maxScale, 1), 1 + configuration.clickEmphasis * 1.4 + cursorScaleBoost)
-            let zoomIn = max(0.08, 0.22 - configuration.clickEmphasis * 0.08)
-            let rippleHoldBoost = configuration.clickRippleEnabled ? 0.08 : 0
-            let hold = 0.12 + configuration.clickEmphasis * 0.20 + rippleHoldBoost
-            let zoomOut = 0.20
+            for event in chapter.events.dropFirst() {
+                let moveStart = max(chapterZoomStart, event.t - moveLead)
+                currentCenter = softBoundedCenter(
+                    for: event.point,
+                    currentCenter: currentCenter,
+                    scale: targetScale,
+                    width: width,
+                    height: height
+                )
+                keyframes.append(
+                    CameraKeyframe(t: moveStart, scale: targetScale, cx: currentCenter.x, cy: currentCenter.y)
+                )
+                keyframes.append(
+                    CameraKeyframe(t: event.t, scale: targetScale, cx: currentCenter.x, cy: currentCenter.y)
+                )
+            }
 
-            let t0 = max(0, click.t)
-            let t1 = min(safeDuration, t0 + zoomIn)
-            let t2 = min(safeDuration, t1 + hold)
-            let t3 = min(safeDuration, t2 + zoomOut)
-
-            keyframes.append(CameraKeyframe(t: t0, scale: 1, cx: center.x, cy: center.y))
-            keyframes.append(CameraKeyframe(t: t1, scale: targetScale, cx: center.x, cy: center.y))
-            keyframes.append(CameraKeyframe(t: t2, scale: targetScale, cx: center.x, cy: center.y))
-            keyframes.append(CameraKeyframe(t: t3, scale: 1, cx: center.x, cy: center.y))
+            let zoomOutStart = min(safeDuration, last.t + idleBeforeZoomOut)
+            let zoomOutEnd = min(safeDuration, zoomOutStart + zoomOutDuration)
+            keyframes.append(
+                CameraKeyframe(t: zoomOutStart, scale: targetScale, cx: currentCenter.x, cy: currentCenter.y)
+            )
+            keyframes.append(
+                CameraKeyframe(t: zoomOutEnd, scale: 1, cx: currentCenter.x, cy: currentCenter.y)
+            )
         }
 
         let scrollEvents = eventLog.events
@@ -96,7 +131,7 @@ struct CameraTrackGenerator {
 
             let point = clickCapturePoint(scroll) ?? point(at: scroll.t, in: smoothedCursor) ?? defaultCenter
             let center = clampedCenter(
-                for: biasedCenter(from: point, width: width, height: height),
+                for: point,
                 scale: 1,
                 width: width,
                 height: height
@@ -191,11 +226,72 @@ struct CameraTrackGenerator {
         return nil
     }
 
-    private func biasedCenter(from point: CGPoint, width: Double, height: Double) -> CGPoint {
-        CGPoint(
-            x: point.x + width * 0.08,
-            y: point.y - height * 0.05
+    private func clusteredClickChapters(
+        from clicks: [TimedPoint],
+        timeThreshold: Double,
+        distanceThreshold: Double
+    ) -> [ClickChapter] {
+        guard let first = clicks.first else {
+            return []
+        }
+
+        var chapters: [ClickChapter] = [ClickChapter(events: [first])]
+
+        for click in clicks.dropFirst() {
+            guard var current = chapters.popLast(), let last = current.events.last else {
+                chapters.append(ClickChapter(events: [click]))
+                continue
+            }
+
+            let timeDelta = click.t - last.t
+            let distance = hypot(click.point.x - last.point.x, click.point.y - last.point.y)
+
+            if timeDelta <= timeThreshold && distance <= distanceThreshold {
+                current.events.append(click)
+                chapters.append(current)
+            } else {
+                chapters.append(current)
+                chapters.append(ClickChapter(events: [click]))
+            }
+        }
+
+        return chapters
+    }
+
+    private func softBoundedCenter(
+        for point: CGPoint,
+        currentCenter: CGPoint,
+        scale: Double,
+        width: Double,
+        height: Double
+    ) -> CGPoint {
+        let safeScale = max(1, scale)
+        let visibleWidth = width / safeScale
+        let visibleHeight = height / safeScale
+
+        let cropRect = CGRect(
+            x: currentCenter.x - visibleWidth / 2,
+            y: currentCenter.y - visibleHeight / 2,
+            width: visibleWidth,
+            height: visibleHeight
         )
+
+        let safeRect = cropRect.insetBy(dx: visibleWidth * 0.2, dy: visibleHeight * 0.2)
+        var adjusted = currentCenter
+
+        if point.x < safeRect.minX {
+            adjusted.x -= (safeRect.minX - point.x)
+        } else if point.x > safeRect.maxX {
+            adjusted.x += (point.x - safeRect.maxX)
+        }
+
+        if point.y < safeRect.minY {
+            adjusted.y -= (safeRect.minY - point.y)
+        } else if point.y > safeRect.maxY {
+            adjusted.y += (point.y - safeRect.maxY)
+        }
+
+        return clampedCenter(for: adjusted, scale: scale, width: width, height: height)
     }
 
     private func clampedCenter(for point: CGPoint, scale: Double, width: Double, height: Double) -> CGPoint {
