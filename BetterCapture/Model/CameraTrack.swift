@@ -62,14 +62,20 @@ struct CameraTrack: Codable, Sendable {
             if time >= start.t && time <= end.t {
                 let span = max(0.000_001, end.t - start.t)
                 let progress = (time - start.t) / span
+                let easedProgress = smoothStep(progress)
                 return CameraState(
-                    scale: start.scale + (end.scale - start.scale) * progress,
-                    cx: start.cx + (end.cx - start.cx) * progress,
-                    cy: start.cy + (end.cy - start.cy) * progress
+                    scale: start.scale + (end.scale - start.scale) * easedProgress,
+                    cx: start.cx + (end.cx - start.cx) * easedProgress,
+                    cy: start.cy + (end.cy - start.cy) * easedProgress
                 )
             }
         }
 
         return CameraState(scale: last.scale, cx: last.cx, cy: last.cy)
+    }
+
+    private func smoothStep(_ value: Double) -> Double {
+        let t = min(max(value, 0), 1)
+        return t * t * (3 - 2 * t)
     }
 }

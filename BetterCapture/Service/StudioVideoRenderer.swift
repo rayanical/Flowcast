@@ -194,6 +194,11 @@ final class StudioVideoRenderer: @unchecked Sendable {
                     outputSize: outputSize,
                     configuration: configuration
                 )
+
+                // Consume audio continuously while reading video so reader buffers do not stall.
+                for pipe in activeAudioPipes {
+                    try appendOneAudioSampleIfAvailable(from: pipe.output, to: pipe.input)
+                }
             }
 
             videoInput.markAsFinished()
@@ -297,6 +302,18 @@ final class StudioVideoRenderer: @unchecked Sendable {
             if !input.append(sampleBuffer) {
                 throw StudioRenderError.failedToAppendAudio
             }
+        }
+    }
+
+    private func appendOneAudioSampleIfAvailable(from output: AVAssetReaderTrackOutput, to input: AVAssetWriterInput) throws {
+        guard input.isReadyForMoreMediaData else {
+            return
+        }
+        guard let sampleBuffer = output.copyNextSampleBuffer() else {
+            return
+        }
+        if !input.append(sampleBuffer) {
+            throw StudioRenderError.failedToAppendAudio
         }
     }
 

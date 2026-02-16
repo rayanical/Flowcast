@@ -70,7 +70,18 @@ final class CoreImageFrameTransformer: FrameTransformer, @unchecked Sendable {
 
         let scaleX = outputSize.width / cropRect.width
         let scaleY = outputSize.height / cropRect.height
-        image = image.transformed(by: .init(scaleX: scaleX, y: scaleY))
+        if scaleX > 1 || scaleY > 1 {
+            // Use Lanczos when upscaling to preserve sharp text/edges during zoom.
+            image = image.applyingFilter(
+                "CILanczosScaleTransform",
+                parameters: [
+                    kCIInputScaleKey: scaleX,
+                    kCIInputAspectRatioKey: scaleY / max(scaleX, 0.000_001)
+                ]
+            )
+        } else {
+            image = image.transformed(by: .init(scaleX: scaleX, y: scaleY))
+        }
 
         if style.roundedCornersEnabled {
             image = roundedImage(image, in: outputRect)
