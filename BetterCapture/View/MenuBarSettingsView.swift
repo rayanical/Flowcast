@@ -80,6 +80,44 @@ struct MenuBarToggle: View {
     }
 }
 
+// MARK: - Slider Row
+
+/// A menu bar style slider row with value label.
+struct MenuBarSlider: View {
+    let name: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var fractionDigits = 2
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(value, format: .number.precision(.fractionLength(fractionDigits)))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Slider(value: $value, in: range)
+                .tint(.blue)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isHovered ? .gray.opacity(0.1) : .clear)
+                .padding(.horizontal, 4)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
 // MARK: - Expandable Picker Row
 
 /// A menu bar style picker that expands inline to show options with hover effect
@@ -483,6 +521,49 @@ struct VideoSettingsSection: View {
     }
 }
 
+// MARK: - Studio Settings Section
+
+struct StudioSettingsSection: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SectionDivider()
+
+            SectionHeader(title: "Studio")
+
+            MenuBarToggle(name: "Auto Zoom", isOn: $settings.autoZoomEnabled)
+            MenuBarSlider(name: "Zoom Strength", value: $settings.autoZoomMaxScale, range: 1...2.5)
+            MenuBarSlider(name: "Click Emphasis", value: $settings.clickEmphasis, range: 0...1)
+            MenuBarSlider(name: "Smoothing", value: $settings.cameraSmoothing, range: 0.08...0.9)
+            MenuBarToggle(name: "Follow Cursor", isOn: $settings.followCursor)
+
+            MenuBarExpandablePicker(
+                name: "Profile",
+                selection: $settings.studioProfilePreset,
+                options: StudioProfilePreset.allCases.map { ($0, $0.label) }
+            )
+
+            MenuBarExpandablePicker(
+                name: "Export",
+                selection: $settings.studioExportPreset,
+                options: StudioExportPreset.allCases.map { ($0, $0.label) }
+            )
+
+            MenuBarExpandableSection(title: "Polish") {
+                MenuBarToggle(name: "Click Ripple", isOn: $settings.studioClickRipple)
+                MenuBarToggle(name: "Cursor Scale", isOn: $settings.studioCursorScale)
+                MenuBarToggle(name: "Rounded Corners", isOn: $settings.studioRoundedCorners)
+                MenuBarToggle(name: "Shadow", isOn: $settings.studioShadow)
+                MenuBarToggle(name: "Background Blur", isOn: $settings.studioBackgroundBlur)
+            }
+        }
+        .onChange(of: settings.studioProfilePreset) { _, newValue in
+            settings.applyStudioProfilePreset(newValue)
+        }
+    }
+}
+
 // MARK: - Audio Settings Section
 
 /// Audio settings section with header and inline content
@@ -646,6 +727,7 @@ struct PresenterOverlaySettingsSection: View {
 #Preview {
     VStack(spacing: 0) {
         VideoSettingsSection(settings: SettingsStore())
+        StudioSettingsSection(settings: SettingsStore())
         PresenterOverlaySettingsSection(settings: SettingsStore(), cameraDeviceService: CameraDeviceService())
         AudioSettingsSection(settings: SettingsStore(), audioDeviceService: AudioDeviceService())
     }

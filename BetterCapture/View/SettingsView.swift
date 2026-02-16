@@ -11,6 +11,7 @@ import SwiftUI
 /// The settings window for BetterCapture
 struct SettingsView: View {
     @Bindable var settings: SettingsStore
+    @Bindable var studioExportCoordinator: StudioExportCoordinator
     var updaterService: UpdaterService
 
     var body: some View {
@@ -26,8 +27,12 @@ struct SettingsView: View {
             Tab("Audio", systemImage: "waveform") {
                 AudioSettingsView(settings: settings)
             }
+
+            Tab("Studio", systemImage: "wand.and.stars") {
+                StudioSettingsView(settings: settings, coordinator: studioExportCoordinator)
+            }
         }
-        .frame(width: 500, height: 420)
+        .frame(width: 620, height: 560)
     }
 }
 
@@ -242,6 +247,99 @@ struct GeneralSettingsView: View {
     }
 }
 
+// MARK: - Studio Settings
+
+struct StudioSettingsView: View {
+    @Bindable var settings: SettingsStore
+    @Bindable var coordinator: StudioExportCoordinator
+
+    var body: some View {
+        Form {
+            Section("Camera Behavior") {
+                Toggle("Auto Zoom", isOn: $settings.autoZoomEnabled)
+                Toggle("Follow Cursor", isOn: $settings.followCursor)
+
+                LabeledContent("Profile") {
+                    Picker("Profile", selection: $settings.studioProfilePreset) {
+                        ForEach(StudioProfilePreset.allCases) { preset in
+                            Text(preset.label).tag(preset)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                }
+
+                LabeledContent("Zoom Strength") {
+                    Slider(value: $settings.autoZoomMaxScale, in: 1...2.5)
+                        .frame(width: 220)
+                }
+                LabeledContent("Click Emphasis") {
+                    Slider(value: $settings.clickEmphasis, in: 0...1)
+                        .frame(width: 220)
+                }
+                LabeledContent("Smoothing") {
+                    Slider(value: $settings.cameraSmoothing, in: 0.08...0.9)
+                        .frame(width: 220)
+                }
+            }
+
+            Section("Export") {
+                LabeledContent("Resolution") {
+                    Picker("Resolution", selection: $settings.studioExportPreset) {
+                        ForEach(StudioExportPreset.allCases) { preset in
+                            Text(preset.label).tag(preset)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                }
+
+                Toggle("Click Ripple", isOn: $settings.studioClickRipple)
+                Toggle("Cursor Scale While Zoomed", isOn: $settings.studioCursorScale)
+                Toggle("Rounded Corners", isOn: $settings.studioRoundedCorners)
+                Toggle("Shadow", isOn: $settings.studioShadow)
+                Toggle("Background Blur", isOn: $settings.studioBackgroundBlur)
+            }
+
+            Section("Preview") {
+                CameraPreviewView(coordinator: coordinator, settings: settings)
+            }
+
+            Section("Final Preview") {
+                if let finalURL = coordinator.latestFinalVideoURL {
+                    StudioFinalVideoPreview(url: finalURL)
+                } else {
+                    Text("No final export yet")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Queue") {
+                Text(coordinator.statusText)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Auto Zoom Export") {
+                        coordinator.enqueueLastRawArtifact()
+                    }
+                    .disabled(!coordinator.canExportLastRaw)
+
+                    Button("Cancel Exports", role: .destructive) {
+                        coordinator.cancelAllExports()
+                    }
+                    .disabled(!coordinator.canCancelExports)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .onChange(of: settings.studioProfilePreset) { _, newValue in
+            settings.applyStudioProfilePreset(newValue)
+            coordinator.refreshPreview()
+        }
+    }
+}
+
 // MARK: - About Section
 
 struct AboutSection: View {
@@ -271,5 +369,9 @@ struct AboutSection: View {
 // MARK: - Preview
 
 #Preview {
-    SettingsView(settings: SettingsStore(), updaterService: UpdaterService())
+    SettingsView(
+        settings: SettingsStore(),
+        studioExportCoordinator: StudioExportCoordinator(settings: SettingsStore()),
+        updaterService: UpdaterService()
+    )
 }

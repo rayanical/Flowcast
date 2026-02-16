@@ -395,6 +395,196 @@ final class SettingsStore {
         }
     }
 
+    // MARK: - Studio Settings
+
+    var autoZoomEnabled: Bool {
+        get {
+            access(keyPath: \.autoZoomEnabled)
+            return UserDefaults.standard.object(forKey: "autoZoomEnabled") as? Bool ?? true
+        }
+        set {
+            withMutation(keyPath: \.autoZoomEnabled) {
+                UserDefaults.standard.set(newValue, forKey: "autoZoomEnabled")
+            }
+        }
+    }
+
+    var autoZoomMaxScale: Double {
+        get {
+            access(keyPath: \.autoZoomMaxScale)
+            let storedValue = UserDefaults.standard.object(forKey: "autoZoomMaxScale") as? Double
+            return min(max(storedValue ?? 2.0, 1.0), 2.5)
+        }
+        set {
+            withMutation(keyPath: \.autoZoomMaxScale) {
+                UserDefaults.standard.set(min(max(newValue, 1.0), 2.5), forKey: "autoZoomMaxScale")
+            }
+        }
+    }
+
+    var clickEmphasis: Double {
+        get {
+            access(keyPath: \.clickEmphasis)
+            let storedValue = UserDefaults.standard.object(forKey: "clickEmphasis") as? Double
+            return min(max(storedValue ?? 0.6, 0.0), 1.0)
+        }
+        set {
+            withMutation(keyPath: \.clickEmphasis) {
+                UserDefaults.standard.set(min(max(newValue, 0.0), 1.0), forKey: "clickEmphasis")
+            }
+        }
+    }
+
+    var cameraSmoothing: Double {
+        get {
+            access(keyPath: \.cameraSmoothing)
+            let storedValue = UserDefaults.standard.object(forKey: "cameraSmoothing") as? Double
+            return min(max(storedValue ?? 0.55, 0.08), 0.9)
+        }
+        set {
+            withMutation(keyPath: \.cameraSmoothing) {
+                UserDefaults.standard.set(min(max(newValue, 0.08), 0.9), forKey: "cameraSmoothing")
+            }
+        }
+    }
+
+    var followCursor: Bool {
+        get {
+            access(keyPath: \.followCursor)
+            return UserDefaults.standard.object(forKey: "followCursor") as? Bool ?? true
+        }
+        set {
+            withMutation(keyPath: \.followCursor) {
+                UserDefaults.standard.set(newValue, forKey: "followCursor")
+            }
+        }
+    }
+
+    var studioProfilePreset: StudioProfilePreset {
+        get {
+            access(keyPath: \.studioProfilePreset)
+            let raw = UserDefaults.standard.string(forKey: "studioProfilePreset") ?? StudioProfilePreset.demo.rawValue
+            return StudioProfilePreset(rawValue: raw) ?? .demo
+        }
+        set {
+            withMutation(keyPath: \.studioProfilePreset) {
+                UserDefaults.standard.set(newValue.rawValue, forKey: "studioProfilePreset")
+            }
+        }
+    }
+
+    var studioExportPreset: StudioExportPreset {
+        get {
+            access(keyPath: \.studioExportPreset)
+            let raw = UserDefaults.standard.string(forKey: "studioExportPreset") ?? StudioExportPreset.source.rawValue
+            return StudioExportPreset(rawValue: raw) ?? .source
+        }
+        set {
+            withMutation(keyPath: \.studioExportPreset) {
+                UserDefaults.standard.set(newValue.rawValue, forKey: "studioExportPreset")
+            }
+        }
+    }
+
+    var studioClickRipple: Bool {
+        get {
+            access(keyPath: \.studioClickRipple)
+            return UserDefaults.standard.object(forKey: "studioClickRipple") as? Bool ?? false
+        }
+        set {
+            withMutation(keyPath: \.studioClickRipple) {
+                UserDefaults.standard.set(newValue, forKey: "studioClickRipple")
+            }
+        }
+    }
+
+    var studioCursorScale: Bool {
+        get {
+            access(keyPath: \.studioCursorScale)
+            return UserDefaults.standard.object(forKey: "studioCursorScale") as? Bool ?? false
+        }
+        set {
+            withMutation(keyPath: \.studioCursorScale) {
+                UserDefaults.standard.set(newValue, forKey: "studioCursorScale")
+            }
+        }
+    }
+
+    var studioRoundedCorners: Bool {
+        get {
+            access(keyPath: \.studioRoundedCorners)
+            return UserDefaults.standard.object(forKey: "studioRoundedCorners") as? Bool ?? true
+        }
+        set {
+            withMutation(keyPath: \.studioRoundedCorners) {
+                UserDefaults.standard.set(newValue, forKey: "studioRoundedCorners")
+            }
+        }
+    }
+
+    var studioShadow: Bool {
+        get {
+            access(keyPath: \.studioShadow)
+            return UserDefaults.standard.object(forKey: "studioShadow") as? Bool ?? true
+        }
+        set {
+            withMutation(keyPath: \.studioShadow) {
+                UserDefaults.standard.set(newValue, forKey: "studioShadow")
+            }
+        }
+    }
+
+    var studioBackgroundBlur: Bool {
+        get {
+            access(keyPath: \.studioBackgroundBlur)
+            return UserDefaults.standard.object(forKey: "studioBackgroundBlur") as? Bool ?? false
+        }
+        set {
+            withMutation(keyPath: \.studioBackgroundBlur) {
+                UserDefaults.standard.set(newValue, forKey: "studioBackgroundBlur")
+            }
+        }
+    }
+
+    var studioRenderConfiguration: StudioRenderConfiguration {
+        StudioRenderConfiguration(
+            autoZoomEnabled: autoZoomEnabled,
+            maxScale: autoZoomMaxScale,
+            clickEmphasis: clickEmphasis,
+            smoothing: cameraSmoothing,
+            followCursor: followCursor,
+            profilePreset: studioProfilePreset,
+            exportPreset: studioExportPreset,
+            clickRippleEnabled: studioClickRipple,
+            cursorScaleEnabled: studioCursorScale,
+            roundedCornersEnabled: studioRoundedCorners,
+            shadowEnabled: studioShadow,
+            backgroundBlurEnabled: studioBackgroundBlur
+        )
+    }
+
+    func applyStudioProfilePreset(_ preset: StudioProfilePreset) {
+        studioProfilePreset = preset
+
+        switch preset {
+        case .demo:
+            autoZoomMaxScale = 1.8
+            clickEmphasis = 0.45
+            cameraSmoothing = 0.6
+            followCursor = true
+        case .tutorial:
+            autoZoomMaxScale = 2.1
+            clickEmphasis = 0.7
+            cameraSmoothing = 0.55
+            followCursor = true
+        case .speedrun:
+            autoZoomMaxScale = 1.6
+            clickEmphasis = 0.35
+            cameraSmoothing = 0.42
+            followCursor = false
+        }
+    }
+
     // MARK: - Output Settings
 
     /// The default output directory (Movies/BetterCapture)

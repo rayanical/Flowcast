@@ -76,8 +76,11 @@ final class RecorderViewModel {
     let previewService: PreviewService
     let notificationService: NotificationService
     let permissionService: PermissionService
+    let studioExportCoordinator: StudioExportCoordinator
     private let captureEngine: CaptureEngine
     private let assetWriter: AssetWriter
+    private let interactionEventRecorder: InteractionEventRecorder
+    private let sampleBufferRouter: CaptureSampleBufferRouter
     private let cameraSession = CameraSession()
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "BetterCapture", category: "RecorderViewModel")
@@ -86,24 +89,32 @@ final class RecorderViewModel {
 
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
+    private var captureSessionStartedAt: Date?
     private var videoSize: CGSize = .zero
+    private var activeRawCaptureMode: RawCaptureMode = .unsupported
     private let areaSelectionOverlay = AreaSelectionOverlay()
     private let selectionBorderFrame = SelectionBorderFrame()
 
     // MARK: - Initialization
 
     init() {
-        self.settings = SettingsStore()
+        let settingsStore = SettingsStore()
+        self.settings = settingsStore
         self.audioDeviceService = AudioDeviceService()
         self.cameraDeviceService = CameraDeviceService()
         self.previewService = PreviewService()
         self.notificationService = NotificationService()
         self.permissionService = PermissionService()
+        self.studioExportCoordinator = StudioExportCoordinator(settings: settingsStore)
         self.captureEngine = CaptureEngine()
         self.assetWriter = AssetWriter()
+        self.interactionEventRecorder = InteractionEventRecorder()
+        self.sampleBufferRouter = CaptureSampleBufferRouter()
 
         captureEngine.delegate = self
-        captureEngine.sampleBufferDelegate = assetWriter
+        sampleBufferRouter.primaryDelegate = assetWriter
+        sampleBufferRouter.secondaryDelegate = interactionEventRecorder
+        captureEngine.sampleBufferDelegate = sampleBufferRouter
         previewService.delegate = self
     }
 
@@ -222,6 +233,14 @@ final class RecorderViewModel {
             }
             logger.info("Video size: \(self.videoSize.width)x\(self.videoSize.height)")
 
+            activeRawCaptureMode = resolvedRawCaptureMode()
+            let coordinateMapper = coordinateMapper(for: activeRawCaptureMode, videoSize: videoSize)
+            interactionEventRecorder.startRecording(
+                captureWidth: Int(videoSize.width),
+                captureHeight: Int(videoSize.height),
+                mapper: coordinateMapper
+            )
+
             // Setup asset writer
             let outputURL = settings.generateOutputURL()
             try assetWriter.setup(url: outputURL, settings: settings, videoSize: videoSize)
@@ -237,6 +256,8 @@ final class RecorderViewModel {
             logger.info("Starting capture engine...")
             try await captureEngine.startCapture(with: settings, videoSize: videoSize, sourceRect: selectedSourceRect)
 
+            captureSessionStartedAt = Date()
+
             // Start timer
             startTimer()
 
@@ -247,6 +268,7 @@ final class RecorderViewModel {
             lastError = error
             cameraSession.stop()
             selectionBorderFrame.dismiss()
+            interactionEventRecorder.cancelRecording()
             logger.error("Failed to start recording: \(error.localizedDescription)")
         }
     }
@@ -258,6 +280,8 @@ final class RecorderViewModel {
         state = .stopping
         stopTimer()
         selectionBorderFrame.dismiss()
+        let captureStartedAt = captureSessionStartedAt ?? Date()
+        let captureEndedAt = Date()
 
         do {
             // Stop capture and camera session
@@ -267,6 +291,21 @@ final class RecorderViewModel {
 
             // Finalize file
             let outputURL = try await assetWriter.finishWriting()
+            let eventsURL = outputURL.deletingPathExtension().appendingPathExtension("events.json")
+            _ = try await interactionEventRecorder.stopAndWriteEvents(to: eventsURL)
+
+            let artifact = RawCaptureArtifact(
+                id: UUID(),
+                rawVideoURL: outputURL,
+                captureWidth: Int(videoSize.width),
+                captureHeight: Int(videoSize.height),
+                captureMode: activeRawCaptureMode,
+                startedAt: captureStartedAt,
+                endedAt: captureEndedAt,
+                eventsURL: eventsURL
+            )
+            studioExportCoordinator.enqueue(artifact)
+            captureSessionStartedAt = nil
 
             state = .idle
             recordingDuration = 0
@@ -283,6 +322,8 @@ final class RecorderViewModel {
             state = .idle
             lastError = error
             assetWriter.cancel()
+            interactionEventRecorder.cancelRecording()
+            captureSessionStartedAt = nil
             notificationService.sendRecordingFailedNotification(error: error)
             logger.error("Failed to stop recording: \(error.localizedDescription)")
         }
@@ -335,6 +376,63 @@ final class RecorderViewModel {
     }
 
     // MARK: - Helper Methods
+
+    private func resolvedRawCaptureMode() -> RawCaptureMode {
+        if selectedSourceRect != nil {
+            return .area
+        }
+
+        guard let filter = selectedContentFilter else {
+            return .unsupported
+        }
+
+        if !filter.includedWindows.isEmpty || !filter.includedApplications.isEmpty {
+            return .unsupported
+        }
+
+        if filter.includedDisplays.first != nil {
+            return .display
+        }
+
+        return .unsupported
+    }
+
+    private func coordinateMapper(for mode: RawCaptureMode, videoSize: CGSize) -> CaptureCoordinateMapper? {
+        switch mode {
+        case .area:
+            guard let selectedScreenRect else {
+                return nil
+            }
+            return CaptureCoordinateMapper(
+                globalRect: selectedScreenRect,
+                captureWidth: videoSize.width,
+                captureHeight: videoSize.height
+            )
+
+        case .display:
+            guard let display = selectedContentFilter?.includedDisplays.first else {
+                return nil
+            }
+
+            let matchingScreen = NSScreen.screens.first { screen in
+                let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+                return id == display.displayID
+            }
+
+            guard let matchingScreen else {
+                return nil
+            }
+
+            return CaptureCoordinateMapper(
+                globalRect: matchingScreen.frame,
+                captureWidth: videoSize.width,
+                captureHeight: videoSize.height
+            )
+
+        case .unsupported:
+            return nil
+        }
+    }
 
     private func getContentSize(from filter: SCContentFilter) async -> CGSize {
         // If area selection is active, use the source rect dimensions.

@@ -90,13 +90,15 @@ final class CameraSession {
 
     /// Stops the capture session and releases resources.
     func stop() {
-        guard let current = session else { return }
+        guard let currentSession = session else { return }
         session = nil
+        nonisolated(unsafe) let current = currentSession
 
-        queue.async {
+        queue.async { [current] in
             current.stopRunning()
         }
 
         logger.info("Camera session stopped")
     }
 }
+

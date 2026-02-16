@@ -28,7 +28,11 @@ struct BetterCaptureApp: App {
 
         // Settings window
         Settings {
-            SettingsView(settings: viewModel.settings, updaterService: updaterService)
+            SettingsView(
+                settings: viewModel.settings,
+                studioExportCoordinator: viewModel.studioExportCoordinator,
+                updaterService: updaterService
+            )
         }
     }
 }

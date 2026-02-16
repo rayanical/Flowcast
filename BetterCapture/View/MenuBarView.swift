@@ -14,22 +14,30 @@ struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
     @State private var currentPreview: NSImage?
+    @State private var isRecordingSectionExpanded = true
+    @State private var isStudioSectionExpanded = true
+    @State private var isStudioMoreExpanded = false
+    @State private var isAudioSectionExpanded = false
+    @State private var isAdvancedSectionExpanded = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
             if viewModel.isRecording {
                 recordingContent
             } else {
                 idleContent
             }
         }
-        .frame(width: 320)
+        .padding(.vertical, 10)
+        .frame(minWidth: 340, idealWidth: 380, maxWidth: 420, maxHeight: 560)
     }
 
     // MARK: - Idle State Content
 
     private var idleContent: some View {
-        VStack(spacing: 0) {
+        @Bindable var settings = viewModel.settings
+
+        return VStack(spacing: 8) {
             // Permission status banner (if required permissions are missing)
             if viewModel.permissionService.screenRecordingState != .granted ||
                 (viewModel.settings.captureMicrophone && viewModel.permissionService.microphoneState != .granted) {
@@ -37,7 +45,6 @@ struct MenuBarView: View {
                     permissionService: viewModel.permissionService,
                     showMicrophonePermission: viewModel.settings.captureMicrophone
                 )
-                MenuBarDivider()
             }
 
             // Start Recording Button
@@ -52,82 +59,169 @@ struct MenuBarView: View {
                     await viewModel.startRecording()
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, 2)
 
-            MenuBarDivider()
+            StudioExportStatusRow(text: viewModel.studioExportCoordinator.statusText)
+                .fixedSize(horizontal: false, vertical: true)
 
-            // Content Selection
-            ContentSelectionButton(viewModel: viewModel, onDismissPanel: { dismiss() })
+            ScrollView(.vertical) {
+                VStack(spacing: 8) {
+                    DisclosureGroup("Recording", isExpanded: $isRecordingSectionExpanded) {
+                        VStack(spacing: 6) {
+                            ContentSelectionButton(viewModel: viewModel, onDismissPanel: { dismiss() })
 
-            // Preview thumbnail below the content selection button
-            if viewModel.hasContentSelected {
-                PreviewThumbnailView(
-                    previewImage: currentPreview,
-                    isLivePreviewActive: viewModel.previewService.isCapturing,
-                    onStartLivePreview: {
-                        Task {
-                            await viewModel.startPreview()
+                            if viewModel.hasContentSelected {
+                                PreviewThumbnailView(
+                                    previewImage: currentPreview,
+                                    isLivePreviewActive: viewModel.previewService.isCapturing,
+                                    onStartLivePreview: {
+                                        Task {
+                                            await viewModel.startPreview()
+                                        }
+                                    },
+                                    onStopLivePreview: {
+                                        Task {
+                                            await viewModel.stopPreview()
+                                        }
+                                    }
+                                )
+                                .onChange(of: viewModel.previewService.previewImage) { _, newImage in
+                                    currentPreview = newImage
+                                }
+                                .onAppear {
+                                    currentPreview = viewModel.previewService.previewImage
+                                }
+
+                                Button {
+                                    Task {
+                                        await viewModel.resetAreaSelection()
+                                    }
+                                } label: {
+                                    Text("Reset Selection")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(.red)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 6)
+                                        .background(.gray.opacity(0.15), in: .rect(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 12)
+                            }
+
+                            MenuBarExpandablePicker(
+                                name: "Frame Rate",
+                                selection: $settings.frameRate,
+                                options: FrameRate.allCases.map { ($0, $0.displayName) }
+                            )
+
+                            MenuBarExpandablePicker(
+                                name: "Codec",
+                                selection: $settings.videoCodec,
+                                options: settings.containerFormat.supportedVideoCodecs.map { ($0, $0.rawValue) }
+                            )
+
+                            MenuBarExpandablePicker(
+                                name: "Container",
+                                selection: $settings.containerFormat,
+                                options: ContainerFormat.allCases.map { ($0, $0.rawValue.uppercased()) }
+                            )
                         }
-                    },
-                    onStopLivePreview: {
-                        Task {
-                            await viewModel.stopPreview()
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 12)
+
+                    DisclosureGroup("Studio", isExpanded: $isStudioSectionExpanded) {
+                        VStack(spacing: 6) {
+                            MenuBarToggle(name: "Auto Zoom", isOn: $settings.autoZoomEnabled)
+                            MenuBarSlider(name: "Zoom Strength", value: $settings.autoZoomMaxScale, range: 1...2.5, fractionDigits: 1)
+                            MenuBarSlider(name: "Smoothing", value: $settings.cameraSmoothing, range: 0.08...0.9, fractionDigits: 2)
+
+                            DisclosureGroup("More", isExpanded: $isStudioMoreExpanded) {
+                                VStack(spacing: 6) {
+                                    MenuBarSlider(name: "Click Emphasis", value: $settings.clickEmphasis, range: 0...1, fractionDigits: 2)
+                                    MenuBarToggle(name: "Follow Cursor", isOn: $settings.followCursor)
+
+                                    MenuBarExpandablePicker(
+                                        name: "Profile",
+                                        selection: $settings.studioProfilePreset,
+                                        options: StudioProfilePreset.allCases.map { ($0, $0.label) }
+                                    )
+
+                                    MenuBarExpandablePicker(
+                                        name: "Export",
+                                        selection: $settings.studioExportPreset,
+                                        options: StudioExportPreset.allCases.map { ($0, $0.label) }
+                                    )
+
+                                    StudioExportSection(coordinator: viewModel.studioExportCoordinator)
+                                }
+                                .padding(.top, 4)
+                            }
+                            .padding(.horizontal, 12)
                         }
+                        .padding(.top, 4)
                     }
-                )
-                .onChange(of: viewModel.previewService.previewImage) { _, newImage in
-                    currentPreview = newImage
-                }
-                .onAppear {
-                    currentPreview = viewModel.previewService.previewImage
-                }
+                    .padding(.horizontal, 12)
 
-                Button {
-                    Task {
-                        await viewModel.resetAreaSelection()
+                    DisclosureGroup("Audio", isExpanded: $isAudioSectionExpanded) {
+                        VStack(spacing: 6) {
+                            MenuBarToggle(name: "Capture System Audio", isOn: $settings.captureSystemAudio)
+                            MenuBarToggle(name: "Capture Microphone", isOn: $settings.captureMicrophone)
+
+                            if settings.captureMicrophone {
+                                MicrophoneExpandablePicker(
+                                    selectedID: $settings.selectedMicrophoneID,
+                                    devices: viewModel.audioDeviceService.availableDevices
+                                )
+                            }
+
+                            MenuBarExpandablePicker(
+                                name: "Audio Codec",
+                                selection: $settings.audioCodec,
+                                options: settings.containerFormat.supportedAudioCodecs.map { ($0, $0.rawValue) }
+                            )
+                        }
+                        .padding(.top, 4)
                     }
-                } label: {
-                    Text("Reset Selection")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(.gray.opacity(0.15), in: .rect(cornerRadius: 6))
+                    .padding(.horizontal, 12)
+
+                    DisclosureGroup("Advanced", isExpanded: $isAdvancedSectionExpanded) {
+                        VStack(spacing: 6) {
+                            MenuBarToggle(
+                                name: "Capture Alpha Channel",
+                                isOn: $settings.captureAlphaChannel,
+                                isDisabled: !settings.videoCodec.canToggleAlpha || !settings.containerFormat.supportsAlphaChannel
+                            )
+                            MenuBarToggle(
+                                name: "HDR Recording",
+                                isOn: $settings.captureHDR,
+                                isDisabled: !settings.videoCodec.supportsHDR
+                            )
+                            MenuBarToggle(name: "Show Cursor", isOn: $settings.showCursor)
+                            MenuBarToggle(name: "Show Wallpaper", isOn: $settings.showWallpaper)
+                            MenuBarToggle(name: "Show Menu Bar", isOn: $settings.showMenuBar)
+                            MenuBarToggle(name: "Show Dock", isOn: $settings.showDock)
+
+                            MenuBarActionButton(title: "Open Output Folder", systemImage: "folder") {
+                                let settings = viewModel.settings
+                                let didStart = settings.startAccessingOutputDirectory()
+                                defer {
+                                    if didStart {
+                                        settings.stopAccessingOutputDirectory()
+                                    }
+                                }
+                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: settings.outputDirectory.path)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 12)
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             }
+            .frame(maxHeight: 420)
 
-            MenuBarDivider()
-
-            // Settings Sections (no divider between them - section headers provide separation)
-            VideoSettingsSection(settings: viewModel.settings)
-
-            PresenterOverlaySettingsSection(
-                settings: viewModel.settings,
-                cameraDeviceService: viewModel.cameraDeviceService
-            )
-
-            AudioSettingsSection(
-                settings: viewModel.settings,
-                audioDeviceService: viewModel.audioDeviceService
-            )
-
-            MenuBarDivider()
-
-            // Bottom Actions
-            MenuBarActionButton(title: "Open Output Folder", systemImage: "folder") {
-                let settings = viewModel.settings
-                let didStart = settings.startAccessingOutputDirectory()
-                defer {
-                    if didStart {
-                        settings.stopAccessingOutputDirectory()
-                    }
-                }
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: settings.outputDirectory.path)
-            }
-
-            MenuBarActionButton(title: "Settings...", systemImage: "gear") {
+            MenuBarActionButton(title: "Open Settings...", systemImage: "gear") {
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 openSettings()
             }
@@ -135,14 +229,16 @@ struct MenuBarView: View {
             MenuBarActionButton(title: "Quit...", systemImage: "power") {
                 NSApplication.shared.terminate(nil)
             }
-            .padding(.bottom, 8)
         }
     }
 
     // MARK: - Recording State Content
 
     private var recordingContent: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
+            StudioExportStatusRow(text: "Recording in progress")
+                .fixedSize(horizontal: false, vertical: true)
+
             // Combined Stop Recording Button with timer
             RecordingButton(
                 duration: viewModel.formattedDuration
@@ -151,7 +247,7 @@ struct MenuBarView: View {
                     await viewModel.stopRecording()
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 2)
         }
     }
 }
@@ -246,6 +342,48 @@ struct RecordingButton: View {
         )
         .onHover { hovering in
             isHovered = hovering
+        }
+    }
+}
+
+struct StudioExportStatusRow: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+    }
+}
+
+struct StudioExportSection: View {
+    @Bindable var coordinator: StudioExportCoordinator
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "Studio Export")
+            StudioExportStatusRow(text: coordinator.statusText)
+
+            MenuBarActionButton(
+                title: "Auto Zoom Export",
+                systemImage: "wand.and.sparkles",
+                isDisabled: !coordinator.canExportLastRaw
+            ) {
+                coordinator.enqueueLastRawArtifact()
+            }
+
+            if coordinator.canCancelExports {
+                MenuBarActionButton(
+                    title: "Cancel Export",
+                    systemImage: "xmark.circle",
+                    accentColor: .red
+                ) {
+                    coordinator.cancelAllExports()
+                }
+            }
         }
     }
 }

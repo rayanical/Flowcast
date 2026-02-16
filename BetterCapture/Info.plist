@@ -2,19 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>LSUIElement</key>
-	<true/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>BetterCapture needs access to your microphone to record audio alongside screen captures.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>BetterCapture needs access to your camera to enable Presenter Overlay during screen recordings.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>BetterCapture needs access to screen recording to capture your screen content.</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/jsattler/BetterCapture/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>SPARKLE_PUBLIC_KEY</string>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
 </dict>
 </plist>
