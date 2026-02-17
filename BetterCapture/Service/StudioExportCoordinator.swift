@@ -125,13 +125,14 @@ final class StudioExportCoordinator {
 
     init(
         settings: SettingsStore,
-        pipeline: any StudioExportPipelineType = StudioExportPipeline(),
+        pipeline: (any StudioExportPipelineType)? = nil,
         previewEnabled: Bool = true
     ) {
+        let resolvedPipeline = pipeline ?? StudioExportPipeline()
         self.settings = settings
-        self.pipeline = pipeline
+        self.pipeline = resolvedPipeline
         self.isPreviewEnabled = previewEnabled
-        self.queue = ExportQueue(pipeline: pipeline) { [weak self] event in
+        self.queue = ExportQueue(pipeline: resolvedPipeline) { [weak self] event in
             Task { @MainActor [weak self] in
                 self?.handleQueueEvent(event)
             }

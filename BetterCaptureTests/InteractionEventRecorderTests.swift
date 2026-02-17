@@ -4,9 +4,11 @@
 //
 
 import Foundation
+import CoreGraphics
 import Testing
 @testable import BetterCapture
 
+@MainActor
 struct InteractionEventRecorderTests {
     @Test
     func interactionEventLogRoundTripsWithDualCoordinates() throws {
@@ -108,8 +110,8 @@ struct InteractionEventRecorderTests {
         let scrolls = log.events.filter { $0.type == .scroll }
         #expect(clicks.count == 1)
         #expect(scrolls.count == 1)
-        #expect(clicks[0].t == 0.016)
-        #expect(scrolls[0].t == 0.016)
+        #expect(abs(clicks[0].t - 0.016) < 0.000_1)
+        #expect(abs(scrolls[0].t - 0.016) < 0.000_1)
 
         #expect(clicks[0].captureX != nil)
         #expect(clicks[0].captureY != nil)

@@ -5,7 +5,7 @@
 //  Created by Joshua Sattler on 14.02.26.
 //
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import OSLog
 
 /// Manages a minimal AVCaptureSession so the system recognises an active camera
@@ -101,4 +101,3 @@ final class CameraSession {
         logger.info("Camera session stopped")
     }
 }
-

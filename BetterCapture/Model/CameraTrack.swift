@@ -24,18 +24,18 @@ struct CameraTrack: Codable, Sendable {
     let sourceHeight: Int
     let keyframes: [CameraKeyframe]
 
-    init(version: Int = 1, sourceWidth: Int, sourceHeight: Int, keyframes: [CameraKeyframe]) {
+    nonisolated init(version: Int = 1, sourceWidth: Int, sourceHeight: Int, keyframes: [CameraKeyframe]) {
         self.version = version
         self.sourceWidth = sourceWidth
         self.sourceHeight = sourceHeight
         self.keyframes = keyframes.sorted { $0.t < $1.t }
     }
 
-    var duration: Double {
+    nonisolated var duration: Double {
         keyframes.last?.t ?? 0
     }
 
-    func state(at time: Double) -> CameraState {
+    nonisolated func state(at time: Double) -> CameraState {
         guard let first = keyframes.first else {
             return CameraState(
                 scale: 1,
@@ -74,7 +74,7 @@ struct CameraTrack: Codable, Sendable {
         return CameraState(scale: last.scale, cx: last.cx, cy: last.cy)
     }
 
-    private func smoothStep(_ value: Double) -> Double {
+    nonisolated private func smoothStep(_ value: Double) -> Double {
         let t = min(max(value, 0), 1)
         return t * t * (3 - 2 * t)
     }

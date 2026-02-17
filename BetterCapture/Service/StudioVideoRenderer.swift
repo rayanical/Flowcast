@@ -55,6 +55,14 @@ final class StudioVideoRenderer: @unchecked Sendable {
         let input: AVAssetWriterInput
     }
 
+    private final class WriterBox: @unchecked Sendable {
+        let writer: AVAssetWriter
+
+        init(writer: AVAssetWriter) {
+            self.writer = writer
+        }
+    }
+
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "BetterCapture", category: "StudioVideoRenderer")
     private let overlayContext = CIContext()
 
@@ -318,12 +326,13 @@ final class StudioVideoRenderer: @unchecked Sendable {
     }
 
     private func finishWriting(_ writer: AVAssetWriter) async throws {
+        let box = WriterBox(writer: writer)
         try await withCheckedThrowingContinuation { continuation in
-            writer.finishWriting {
-                if writer.status == .completed {
+            box.writer.finishWriting {
+                if box.writer.status == .completed {
                     continuation.resume(returning: ())
                 } else {
-                    continuation.resume(throwing: StudioRenderError.writerFailed(writer.error))
+                    continuation.resume(throwing: StudioRenderError.writerFailed(box.writer.error))
                 }
             }
         }

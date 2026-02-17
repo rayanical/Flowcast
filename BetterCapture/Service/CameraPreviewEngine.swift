@@ -29,43 +29,41 @@ final class CameraPreviewEngine {
         isRendering = true
         lastErrorMessage = nil
 
-        previewTask = Task.detached(priority: .utility) { [weak self] in
+        previewTask = Task(priority: .utility) { [weak self] in
+            guard let self else {
+                return
+            }
+
             do {
                 try await Self.renderPreviewLoop(
                     rawVideoURL: rawVideoURL,
                     cameraTrack: cameraTrack,
                     configuration: configuration
                 ) { image in
-                    guard let self, self.renderToken == token else {
+                    guard self.renderToken == token else {
                         return
                     }
                     self.previewImage = image
                 }
 
-                await MainActor.run {
-                    guard let self, self.renderToken == token else {
-                        return
-                    }
-                    self.isRendering = false
+                guard self.renderToken == token else {
+                    return
                 }
+                self.isRendering = false
 
             } catch is CancellationError {
-                await MainActor.run {
-                    guard let self, self.renderToken == token else {
-                        return
-                    }
-                    self.isRendering = false
+                guard self.renderToken == token else {
+                    return
                 }
+                self.isRendering = false
 
             } catch {
-                await MainActor.run {
-                    guard let self, self.renderToken == token else {
-                        return
-                    }
-                    self.isRendering = false
-                    self.lastErrorMessage = error.localizedDescription
-                    self.logger.error("Camera preview failed: \(error.localizedDescription)")
+                guard self.renderToken == token else {
+                    return
                 }
+                self.isRendering = false
+                self.lastErrorMessage = error.localizedDescription
+                self.logger.error("Camera preview failed: \(error.localizedDescription)")
             }
         }
     }
@@ -79,7 +77,7 @@ final class CameraPreviewEngine {
         }
     }
 
-    private static func renderPreviewLoop(
+    private nonisolated static func renderPreviewLoop(
         rawVideoURL: URL,
         cameraTrack: CameraTrack,
         configuration: StudioRenderConfiguration,
@@ -163,7 +161,7 @@ final class CameraPreviewEngine {
         }
     }
 
-    private static func resolvedPreviewSize(for source: CGSize) -> CGSize {
+    private nonisolated static func resolvedPreviewSize(for source: CGSize) -> CGSize {
         let maxWidth: CGFloat = 640
         let maxHeight: CGFloat = 360
 
@@ -177,7 +175,7 @@ final class CameraPreviewEngine {
         return CGSize(width: width, height: height)
     }
 
-    private static func createPixelBufferPool(width: Int, height: Int) throws -> CVPixelBufferPool {
+    private nonisolated static func createPixelBufferPool(width: Int, height: Int) throws -> CVPixelBufferPool {
         var pool: CVPixelBufferPool?
         let attributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,

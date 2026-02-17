@@ -87,11 +87,14 @@ struct CameraTrackGeneratorTests {
         )
 
         let track = CameraTrackGenerator().generate(from: log, duration: 6.0, configuration: configuration)
-        let scaleDropMoments = track.keyframes.filter { $0.scale == 1.0 && $0.t > 0.1 }
 
-        // One chapter should produce one zoom-out back to scale 1 (plus final keyframe).
-        #expect(scaleDropMoments.count <= 3)
-        #expect(track.keyframes.contains(where: { $0.t < 1.0 && $0.scale == 1.0 }))
+        // During a tight action cluster, scale should stay zoomed without yo-yo.
+        for sampleTime in stride(from: 1.1, through: 2.2, by: 0.2) {
+            #expect(track.state(at: sampleTime).scale > 1.05)
+        }
+
+        // After sufficient idle time, camera should relax back toward a wide shot.
+        #expect(track.state(at: 5.6).scale <= 1.1)
     }
 
     @Test
@@ -120,7 +123,40 @@ struct CameraTrackGeneratorTests {
         )
 
         let track = CameraTrackGenerator().generate(from: log, duration: 5.0, configuration: configuration)
-        #expect(track.keyframes.contains(where: { $0.t < 2.0 && $0.scale == 1.0 }))
-        #expect(track.keyframes.contains(where: { $0.t == 2.0 && $0.scale > 1.0 }))
+        #expect(track.state(at: 1.4).scale > 1.0)
+        #expect(track.state(at: 2.0).scale > 1.0)
+    }
+
+    @Test
+    func globalCoordinatesFallbackWhenCaptureCoordinatesMissing() {
+        let log = InteractionEventLog(
+            captureWidth: 1_920,
+            captureHeight: 1_080,
+            events: [
+                InteractionEvent(t: 0.2, type: .cursor, globalX: 760, globalY: 480),
+                InteractionEvent(t: 0.9, type: .cursor, globalX: 810, globalY: 520),
+                InteractionEvent(t: 1.0, type: .click, button: .left, globalX: 820, globalY: 540),
+                InteractionEvent(t: 1.5, type: .scroll, globalX: 840, globalY: 560, dx: 0, dy: -42)
+            ]
+        )
+
+        let configuration = StudioRenderConfiguration(
+            autoZoomEnabled: true,
+            maxScale: 2.0,
+            clickEmphasis: 0.7,
+            smoothing: 0.5,
+            followCursor: true,
+            profilePreset: .tutorial,
+            exportPreset: .source,
+            clickRippleEnabled: false,
+            cursorScaleEnabled: false,
+            roundedCornersEnabled: false,
+            shadowEnabled: false,
+            backgroundBlurEnabled: false
+        )
+
+        let track = CameraTrackGenerator().generate(from: log, duration: 3.0, configuration: configuration)
+        #expect(track.keyframes.contains(where: { $0.scale > 1.0 }))
+        #expect(track.state(at: 1.0).scale > 1.0)
     }
 }

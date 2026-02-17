@@ -19,7 +19,17 @@ actor MockStudioExportPipeline: StudioExportPipelineType {
     }
 
     func run(artifact: RawCaptureArtifact, configuration: StudioRenderConfiguration) async throws -> StudioExportResult {
-        runOrder.append(artifact.id)
+        let snapshot = await MainActor.run {
+            (
+                id: artifact.id,
+                captureWidth: artifact.captureWidth,
+                captureHeight: artifact.captureHeight,
+                eventsURL: artifact.eventsURL,
+                rawVideoURL: artifact.rawVideoURL
+            )
+        }
+
+        runOrder.append(snapshot.id)
         runCount += 1
 
         do {
@@ -30,34 +40,51 @@ actor MockStudioExportPipeline: StudioExportPipelineType {
         }
 
         let track = CameraTrack(
-            sourceWidth: artifact.captureWidth,
-            sourceHeight: artifact.captureHeight,
+            sourceWidth: snapshot.captureWidth,
+            sourceHeight: snapshot.captureHeight,
             keyframes: [
-                CameraKeyframe(t: 0, scale: 1, cx: Double(artifact.captureWidth) / 2, cy: Double(artifact.captureHeight) / 2)
+                CameraKeyframe(
+                    t: 0,
+                    scale: 1,
+                    cx: Double(snapshot.captureWidth) / 2,
+                    cy: Double(snapshot.captureHeight) / 2
+                )
             ]
         )
 
         return StudioExportResult(
-            artifactID: artifact.id,
-            cameraTrackURL: artifact.eventsURL,
-            finalVideoURL: artifact.rawVideoURL,
+            artifactID: snapshot.id,
+            cameraTrackURL: snapshot.eventsURL,
+            finalVideoURL: snapshot.rawVideoURL,
             cameraTrack: track
         )
     }
 
     func generateCameraTrack(artifact: RawCaptureArtifact, configuration: StudioRenderConfiguration) async throws -> CameraTrack {
-        CameraTrack(
-            sourceWidth: artifact.captureWidth,
-            sourceHeight: artifact.captureHeight,
+        let snapshot = await MainActor.run {
+            (
+                captureWidth: artifact.captureWidth,
+                captureHeight: artifact.captureHeight
+            )
+        }
+
+        return CameraTrack(
+            sourceWidth: snapshot.captureWidth,
+            sourceHeight: snapshot.captureHeight,
             keyframes: [
-                CameraKeyframe(t: 0, scale: 1, cx: Double(artifact.captureWidth) / 2, cy: Double(artifact.captureHeight) / 2)
+                CameraKeyframe(
+                    t: 0,
+                    scale: 1,
+                    cx: Double(snapshot.captureWidth) / 2,
+                    cy: Double(snapshot.captureHeight) / 2
+                )
             ]
         )
     }
 }
 
+@MainActor
 struct StudioExportCoordinatorTests {
-    @MainActor
     @Test
     func coordinatorQueuesJobsSerially() async throws {
         let mockPipeline = MockStudioExportPipeline()
@@ -81,7 +108,6 @@ struct StudioExportCoordinatorTests {
         #expect(await mockPipeline.cancellationCount == 0)
     }
 
-    @MainActor
     @Test
     func coordinatorCanCancelActiveExports() async throws {
         let mockPipeline = MockStudioExportPipeline(delay: .seconds(1))
@@ -100,7 +126,6 @@ struct StudioExportCoordinatorTests {
         #expect(await mockPipeline.cancellationCount >= 1)
     }
 
-    @MainActor
     @Test
     func cancellationDoesNotDeleteRawRecording() async throws {
         let mockPipeline = MockStudioExportPipeline(delay: .seconds(1))
@@ -111,7 +136,8 @@ struct StudioExportCoordinatorTests {
         )
 
         let id = UUID()
-        let rawURL = URL(filePath: "/tmp/\(id.uuidString).mov")
+        let temporaryDirectory = URL.temporaryDirectory
+        let rawURL = temporaryDirectory.appending(path: "\(id.uuidString).mov")
         let rawData = Data("raw".utf8)
         try rawData.write(to: rawURL, options: .atomic)
 
@@ -124,7 +150,7 @@ struct StudioExportCoordinatorTests {
                 captureMode: .display,
                 startedAt: .now,
                 endedAt: .now,
-                eventsURL: URL(filePath: "/tmp/\(id.uuidString).events.json")
+                eventsURL: temporaryDirectory.appending(path: "\(id.uuidString).events.json")
             ),
             autoExport: true
         )
@@ -138,15 +164,16 @@ struct StudioExportCoordinatorTests {
     }
 
     private func makeArtifact(id: UUID) -> RawCaptureArtifact {
-        RawCaptureArtifact(
+        let temporaryDirectory = URL.temporaryDirectory
+        return RawCaptureArtifact(
             id: id,
-            rawVideoURL: URL(filePath: "/tmp/\(id.uuidString).mov"),
+            rawVideoURL: temporaryDirectory.appending(path: "\(id.uuidString).mov"),
             captureWidth: 1_920,
             captureHeight: 1_080,
             captureMode: .display,
             startedAt: .now,
             endedAt: .now,
-            eventsURL: URL(filePath: "/tmp/\(id.uuidString).events.json")
+            eventsURL: temporaryDirectory.appending(path: "\(id.uuidString).events.json")
         )
     }
 }

@@ -8,13 +8,23 @@ import CoreImage
 import Foundation
 
 protocol FrameTransformer: Sendable {
-    func transform(sourcePixelBuffer: CVPixelBuffer, cameraState: CameraState, destinationPixelBuffer: CVPixelBuffer) throws
+    nonisolated func transform(sourcePixelBuffer: CVPixelBuffer, cameraState: CameraState, destinationPixelBuffer: CVPixelBuffer) throws
 }
 
 struct FrameTransformerStyle: Sendable {
     var roundedCornersEnabled = false
     var shadowEnabled = false
     var backgroundBlurEnabled = false
+
+    nonisolated init(
+        roundedCornersEnabled: Bool = false,
+        shadowEnabled: Bool = false,
+        backgroundBlurEnabled: Bool = false
+    ) {
+        self.roundedCornersEnabled = roundedCornersEnabled
+        self.shadowEnabled = shadowEnabled
+        self.backgroundBlurEnabled = backgroundBlurEnabled
+    }
 }
 
 enum FrameTransformerError: LocalizedError {
@@ -37,12 +47,12 @@ final class CoreImageFrameTransformer: FrameTransformer, @unchecked Sendable {
     private let outputSize: CGSize
     private let style: FrameTransformerStyle
 
-    init(outputSize: CGSize, style: FrameTransformerStyle = .init()) {
+    nonisolated init(outputSize: CGSize, style: FrameTransformerStyle = .init()) {
         self.outputSize = outputSize
         self.style = style
     }
 
-    func transform(sourcePixelBuffer: CVPixelBuffer, cameraState: CameraState, destinationPixelBuffer: CVPixelBuffer) throws {
+    nonisolated func transform(sourcePixelBuffer: CVPixelBuffer, cameraState: CameraState, destinationPixelBuffer: CVPixelBuffer) throws {
         let sourceWidth = Double(CVPixelBufferGetWidth(sourcePixelBuffer))
         let sourceHeight = Double(CVPixelBufferGetHeight(sourcePixelBuffer))
 
@@ -123,7 +133,7 @@ final class CoreImageFrameTransformer: FrameTransformer, @unchecked Sendable {
         context.render(composited, to: destinationPixelBuffer, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
     }
 
-    private func roundedImage(_ image: CIImage, in rect: CGRect) -> CIImage {
+    nonisolated private func roundedImage(_ image: CIImage, in rect: CGRect) -> CIImage {
         let radius = min(rect.width, rect.height) * 0.04
         let maskFilter = CIFilter(
             name: "CIRoundedRectangleGenerator",
@@ -151,7 +161,7 @@ final class CoreImageFrameTransformer: FrameTransformer, @unchecked Sendable {
 
 /// Placeholder backend for future Metal implementation.
 struct MetalFrameTransformer: FrameTransformer {
-    func transform(sourcePixelBuffer: CVPixelBuffer, cameraState: CameraState, destinationPixelBuffer: CVPixelBuffer) throws {
+    nonisolated func transform(sourcePixelBuffer: CVPixelBuffer, cameraState: CameraState, destinationPixelBuffer: CVPixelBuffer) throws {
         throw FrameTransformerError.metalBackendUnavailable
     }
 }
